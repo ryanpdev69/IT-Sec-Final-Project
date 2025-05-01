@@ -60,14 +60,13 @@
             margin-top: 20px;
             text-align: center;
         }
-        #error, #success {
+        .error {
+            color: red;
             margin-top: 10px;
         }
-        #error {
-            color: red;
-        }
-        #success {
+        .success {
             color: green;
+            margin-top: 10px;
         }
         #uploadedImage img, #video {
             max-width: 100%;
@@ -82,6 +81,42 @@
             color: #666;
             margin-bottom: 10px;
         }
+        .qr-status {
+            font-weight: bold;
+            margin-top: 5px;
+        }
+        .toggle-password {
+            cursor: pointer;
+            color: #007bff;
+            font-size: 0.8em;
+            margin-left: 5px;
+        }
+        .password-container {
+            position: relative;
+        }
+        .password-container input {
+            padding-right: 80px;
+        }
+        .password-container span {
+            position: absolute;
+            right: 10px;
+            top: 8px;
+        }
+        .checkbox-container {
+            display: flex;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        .checkbox-container input {
+            width: auto;
+            margin-right: 8px;
+        }
+        #app-version {
+            text-align: center;
+            font-size: 0.8em;
+            color: #666;
+            margin-top: 20px;
+        }
     </style>
 </head>
 <body>
@@ -91,14 +126,25 @@
         <h2>Encrypt Text to QR Code</h2>
         <label for="encryptText">Text to Encrypt:</label>
         <textarea id="encryptText" rows="4" placeholder="Enter text to encrypt"></textarea>
-        <label for="encryptPassword">Password:</label>
-        <input type="password" id="encryptPassword" placeholder="Enter password">
-        <p class="password-info">Choose a strong password. This will be used to scramble your text.</p>
+        
+        <div class="password-container">
+            <label for="encryptPassword">Password:</label>
+            <input type="password" id="encryptPassword" placeholder="Enter password">
+            <span class="toggle-password" onclick="togglePasswordVisibility('encryptPassword')">Show</span>
+        </div>
+        
+        <p class="password-info">Choose a strong password. This will be used to encrypt your text.</p>
+        
+        <div class="checkbox-container">
+            <input type="checkbox" id="rememberPassword" checked>
+            <label for="rememberPassword">Remember password (on this device only)</label>
+        </div>
+        
         <button id="generateQRButton" onclick="encryptAndGenerateQR()">Generate QR Code</button>
         <button id="downloadButton" style="display: none;" onclick="downloadQR()">Download QR Code</button>
         <div id="qrCode"></div>
-        <div id="success"></div>
-        <div id="error"></div>
+        <div id="encryptSuccess" class="success"></div>
+        <div id="encryptError" class="error"></div>
     </div>
 
     <div class="section">
@@ -111,69 +157,159 @@
             <video id="video" autoplay muted playsinline></video>
             <button onclick="stopCamera()">Stop Camera</button>
         </div>
-        <label for="decryptPassword">Password:</label>
-        <input type="password" id="decryptPassword" placeholder="Enter password">
+        <div id="qrStatus" class="qr-status"></div>
+        
+        <div class="password-container">
+            <label for="decryptPassword">Password:</label>
+            <input type="password" id="decryptPassword" placeholder="Enter password">
+            <span class="toggle-password" onclick="togglePasswordVisibility('decryptPassword')">Show</span>
+        </div>
+        
+        <p class="password-info">Not needed if scanning a regular (non-encrypted) QR code</p>
         <button id="decryptButton" onclick="decryptText()" disabled>Decrypt QR Code</button>
         <div id="decryptedResult"></div>
-        <div id="success"></div>
-        <div id="error"></div>
+        <div id="decryptSuccess" class="success"></div>
+        <div id="decryptError" class="error"></div>
     </div>
+
+    <p id="app-version">QR Code Encryptor/Decryptor v1.1.0</p>
 
     <script>
         let stream = null;
         let encryptedText = '';
         let scanning = false;
+        let isEncrypted = false;
+        const APP_KEY = 'qrCodeEncryptorApp'; // Key for localStorage
+
+        // On page load - check localStorage and restore any saved QR data
+        window.addEventListener('DOMContentLoaded', function() {
+            // Load any saved QR data
+            const savedData = loadFromStorage();
+            
+            if (savedData) {
+                encryptedText = savedData.data || '';
+                isEncrypted = savedData.encrypted || false;
+                
+                if (encryptedText) {
+                    const qrStatus = document.getElementById('qrStatus');
+                    qrStatus.textContent = isEncrypted ? 
+                        'QR code data is loaded (encrypted)' : 
+                        'QR code data is loaded (not encrypted)';
+                    qrStatus.style.color = '#007bff';
+                    
+                    // Enable decrypt button since we have data
+                    document.getElementById('decryptButton').disabled = false;
+                }
+                
+                // Restore saved password if available
+                if (savedData.password) {
+                    document.getElementById('decryptPassword').value = savedData.password;
+                    document.getElementById('encryptPassword').value = savedData.password;
+                }
+            }
+        });
 
         // Clear message divs
-        function clearMessages() {
-            document.querySelectorAll('#error, #success').forEach(el => {
-                el.innerHTML = '';
-            });
+        function clearMessages(section) {
+            if (section === 'encrypt' || !section) {
+                document.getElementById('encryptSuccess').innerHTML = '';
+                document.getElementById('encryptError').innerHTML = '';
+            }
+            if (section === 'decrypt' || !section) {
+                document.getElementById('decryptSuccess').innerHTML = '';
+                document.getElementById('decryptError').innerHTML = '';
+                document.getElementById('decryptedResult').innerHTML = '';
+            }
         }
 
-        // Validate input fields and enable/disable buttons
-        function validateInputs() {
-            const encryptText = document.getElementById('encryptText').value.trim();
-            const encryptPassword = document.getElementById('encryptPassword').value.trim();
-            const decryptPassword = document.getElementById('decryptPassword').value.trim();
-            const generateQRButton = document.getElementById('generateQRButton');
-            const decryptButton = document.getElementById('decryptButton');
-
-            generateQRButton.disabled = !encryptText || !encryptPassword;
-            decryptButton.disabled = !encryptedText || !decryptPassword;
+        // Storage functions
+        function saveToStorage(data, encrypted, password) {
+            const storageData = {
+                data: data,
+                encrypted: encrypted,
+                timestamp: new Date().getTime()
+            };
+            
+            // Save password only if checkbox is checked
+            if (document.getElementById('rememberPassword').checked && password) {
+                storageData.password = password;
+            }
+            
+            localStorage.setItem(APP_KEY, JSON.stringify(storageData));
+        }
+        
+        function loadFromStorage() {
+            const data = localStorage.getItem(APP_KEY);
+            return data ? JSON.parse(data) : null;
         }
 
-        // Add input event listeners for real-time validation
-        document.getElementById('encryptText').addEventListener('input', validateInputs);
-        document.getElementById('encryptPassword').addEventListener('input', validateInputs);
-        document.getElementById('decryptPassword').addEventListener('input', validateInputs);
+        function clearStorage() {
+            localStorage.removeItem(APP_KEY);
+            encryptedText = '';
+            isEncrypted = false;
+        }
+
+        // Toggle password visibility
+        function togglePasswordVisibility(inputId) {
+            const input = document.getElementById(inputId);
+            const toggle = input.nextElementSibling;
+            
+            if (input.type === 'password') {
+                input.type = 'text';
+                toggle.textContent = 'Hide';
+            } else {
+                input.type = 'password';
+                toggle.textContent = 'Show';
+            }
+        }
+
+        // Check if text is likely encrypted
+        function detectEncryption(text) {
+            // First check if it's our format with prefix
+            if (text.startsWith('QRENC:')) {
+                return true;
+            }
+            
+            // Fallback checks for other encrypted content
+            return (text.includes(':') && /[A-Za-z0-9+/=]{20,}/.test(text)) || 
+                   text.length > 20 && /[+/=]/.test(text);
+        }
 
         // Function to derive a secure key from the password
-        function deriveKey(password) {
-            // Use PBKDF2 to derive a key from the password with a static salt
-            // In a production environment, you'd want to use a unique salt per encryption
-            const salt = "QRCodeEncryptor2025"; // Static salt for simplicity
-            return CryptoJS.PBKDF2(password, salt, { keySize: 256/32, iterations: 1000 }).toString();
+        function deriveKey(password, salt) {
+            // Use PBKDF2 to derive a key from the password
+            return CryptoJS.PBKDF2(password, salt, { 
+                keySize: 256/32,
+                iterations: 1000 
+            }).toString();
         }
 
         function encryptAndGenerateQR() {
             const text = document.getElementById('encryptText').value.trim();
             const password = document.getElementById('encryptPassword').value.trim();
             const qrCodeDiv = document.getElementById('qrCode');
-            const errorDiv = document.getElementById('error');
-            const successDiv = document.getElementById('success');
+            const errorDiv = document.getElementById('encryptError');
+            const successDiv = document.getElementById('encryptSuccess');
 
             qrCodeDiv.innerHTML = ''; // Clear previous QR code
-            clearMessages();
+            clearMessages('encrypt');
 
-            if (!text || !password) {
-                errorDiv.innerHTML = 'Please enter both text and password.';
+            if (!text) {
+                errorDiv.innerHTML = 'Please enter text to encrypt.';
+                return;
+            }
+
+            if (!password) {
+                errorDiv.innerHTML = 'Please enter a password for encryption.';
                 return;
             }
 
             try {
-                // Get a secure key from the password
-                const key = deriveKey(password);
+                // Generate a random salt for this encryption
+                const salt = CryptoJS.lib.WordArray.random(16).toString();
+                
+                // Get a secure key from the password and salt
+                const key = deriveKey(password, salt);
                 
                 // Generate a random IV for better security
                 const iv = CryptoJS.lib.WordArray.random(16);
@@ -185,13 +321,19 @@
                     mode: CryptoJS.mode.CBC
                 });
                 
-                // Combine IV and encrypted data for storage
-                // Format: iv:encrypted
-                encryptedText = iv.toString() + ':' + encrypted.toString();
+                // Combine salt, IV and encrypted data for storage
+                // Format: QRENC:salt:iv:encrypted
+                // Adding a prefix makes it easier to identify our encrypted QR codes
+                const qrData = `QRENC:${salt}:${iv.toString()}:${encrypted.toString()}`;
+                
+                // Save data for later use
+                encryptedText = qrData;
+                saveToStorage(qrData, true, password);
+                isEncrypted = true;
 
                 // Generate QR code with encrypted text
                 new QRCode(qrCodeDiv, {
-                    text: encryptedText,
+                    text: qrData,
                     width: 256,
                     height: 256,
                     colorDark: '#000000',
@@ -202,6 +344,13 @@
                 // Show download button and success message
                 document.getElementById('downloadButton').style.display = 'inline-block';
                 successDiv.innerHTML = 'QR code generated successfully!';
+                
+                // Update QR status
+                document.getElementById('qrStatus').textContent = 'QR code data is loaded (encrypted)';
+                document.getElementById('qrStatus').style.color = '#007bff';
+                
+                // Enable decrypt button
+                document.getElementById('decryptButton').disabled = false;
             } catch (e) {
                 errorDiv.innerHTML = 'Error generating QR code: ' + e.message;
             }
@@ -215,68 +364,131 @@
                 link.download = 'encrypted_qr_code.png';
                 link.click();
             } else {
-                document.getElementById('error').innerHTML = 'No QR code available to download.';
+                document.getElementById('encryptError').innerHTML = 'No QR code available to download.';
             }
         }
 
         function decryptText() {
             const password = document.getElementById('decryptPassword').value.trim();
             const resultDiv = document.getElementById('decryptedResult');
-            const errorDiv = document.getElementById('error');
-            const successDiv = document.getElementById('success');
+            const errorDiv = document.getElementById('decryptError');
+            const successDiv = document.getElementById('decryptSuccess');
 
             resultDiv.innerHTML = '';
-            clearMessages();
+            clearMessages('decrypt');
+            
+            if (!encryptedText) {
+                errorDiv.innerHTML = 'No QR code data available. Please scan a QR code first.';
+                return;
+            }
 
-            if (!encryptedText || !password) {
-                errorDiv.innerHTML = 'Please scan a QR code and enter a password.';
+            // Handle non-encrypted QR codes
+            if (!isEncrypted) {
+                resultDiv.innerHTML = `<strong>Content (not encrypted):</strong> ${encryptedText}`;
+                successDiv.innerHTML = 'This is a regular QR code (not encrypted).';
+                return;
+            }
+
+            // For encrypted content, we need a password
+            if (!password) {
+                errorDiv.innerHTML = 'Please enter the password to decrypt this QR code.';
                 return;
             }
 
             try {
-                // Split IV and encrypted data
-                const parts = encryptedText.split(':');
-                
-                if (parts.length !== 2) {
-                    // Handle legacy format (without IV) or invalid format
-                    try {
-                        // Try to decrypt directly (old format)
-                        const bytes = CryptoJS.AES.decrypt(encryptedText, password);
-                        const decrypted = bytes.toString(CryptoJS.enc.Utf8);
-                        
-                        if (!decrypted) {
-                            throw new Error('Decryption failed. Incorrect password or invalid QR code.');
-                        }
-                        
-                        resultDiv.innerHTML = `<strong>Decrypted Text:</strong> ${decrypted}`;
-                        successDiv.innerHTML = 'Text decrypted successfully!';
-                        return;
-                    } catch (e) {
-                        throw new Error('Invalid QR code format or incorrect password.');
+                // Check for our custom format first (QRENC:salt:iv:encrypted)
+                if (encryptedText.startsWith('QRENC:')) {
+                    const parts = encryptedText.split(':');
+                    
+                    if (parts.length !== 4) {
+                        throw new Error('Invalid encrypted QR code format.');
                     }
+                    
+                    const salt = parts[1];
+                    const iv = parts[2];
+                    const encryptedData = parts[3];
+                    
+                    // Get key from password and salt
+                    const key = deriveKey(password, salt);
+                    
+                    // Decrypt with IV and key
+                    const bytes = CryptoJS.AES.decrypt(encryptedData, key, {
+                        iv: CryptoJS.enc.Hex.parse(iv),
+                        padding: CryptoJS.pad.Pkcs7,
+                        mode: CryptoJS.mode.CBC
+                    });
+                    
+                    const decrypted = bytes.toString(CryptoJS.enc.Utf8);
+                    
+                    if (!decrypted) {
+                        throw new Error('Decryption failed. Incorrect password.');
+                    }
+                    
+                    resultDiv.innerHTML = `<strong>Decrypted Text:</strong> ${decrypted}`;
+                    successDiv.innerHTML = 'Text decrypted successfully!';
+                    
+                    // Save the password if remember is checked
+                    if (document.getElementById('rememberPassword').checked) {
+                        saveToStorage(encryptedText, true, password);
+                    }
+                    
+                    return;
                 }
                 
-                const iv = parts[0];
-                const encryptedData = parts[1];
+                // Handle legacy format (iv:encrypted)
+                const legacyParts = encryptedText.split(':');
                 
-                // Get key from password
-                const key = deriveKey(password);
-                
-                // Decrypt with IV and key
-                const bytes = CryptoJS.AES.decrypt(encryptedData, key, {
-                    iv: CryptoJS.enc.Hex.parse(iv),
-                    padding: CryptoJS.pad.Pkcs7,
-                    mode: CryptoJS.mode.CBC
-                });
-                
-                const decrypted = bytes.toString(CryptoJS.enc.Utf8);
-
-                if (!decrypted) {
-                    throw new Error('Decryption failed. Incorrect password or invalid QR code.');
+                if (legacyParts.length === 2) {
+                    const iv = legacyParts[0];
+                    const encryptedData = legacyParts[1];
+                    
+                    // For legacy format, use static salt
+                    const salt = "QRCodeEncryptor2025";
+                    const key = deriveKey(password, salt);
+                    
+                    // Decrypt with IV and key
+                    const bytes = CryptoJS.AES.decrypt(encryptedData, key, {
+                        iv: CryptoJS.enc.Hex.parse(iv),
+                        padding: CryptoJS.pad.Pkcs7,
+                        mode: CryptoJS.mode.CBC
+                    });
+                    
+                    const decrypted = bytes.toString(CryptoJS.enc.Utf8);
+                    
+                    if (!decrypted) {
+                        throw new Error('Decryption failed. Incorrect password.');
+                    }
+                    
+                    resultDiv.innerHTML = `<strong>Decrypted Text:</strong> ${decrypted}`;
+                    successDiv.innerHTML = 'Text decrypted successfully! (Legacy format)';
+                    
+                    // Save the password if remember is checked
+                    if (document.getElementById('rememberPassword').checked) {
+                        saveToStorage(encryptedText, true, password);
+                    }
+                    
+                    return;
                 }
+                
+                // Last resort - try direct decryption (very old format)
+                try {
+                    const bytes = CryptoJS.AES.decrypt(encryptedText, password);
+                    const decrypted = bytes.toString(CryptoJS.enc.Utf8);
+                    
+                    if (!decrypted) {
+                        throw new Error('Decryption failed.');
+                    }
+                    
+                    resultDiv.innerHTML = `<strong>Decrypted Text:</strong> ${decrypted}`;
+                    successDiv.innerHTML = 'Text decrypted successfully! (Old format)';
 
-                resultDiv.innerHTML = `<strong>Decrypted Text:</strong> ${decrypted}`;
-                successDiv.innerHTML = 'Text decrypted successfully!';
+                    // Save the password if remember is checked
+                    if (document.getElementById('rememberPassword').checked) {
+                        saveToStorage(encryptedText, true, password);
+                    }
+                } catch (e) {
+                    throw new Error('Invalid QR code format or incorrect password.');
+                }
             } catch (e) {
                 errorDiv.innerHTML = 'Error: ' + e.message;
             }
@@ -285,10 +497,11 @@
         // Handle QR code image upload
         document.getElementById('qrImage').addEventListener('change', function(event) {
             const file = event.target.files[0];
-            const errorDiv = document.getElementById('error');
-            const successDiv = document.getElementById('success');
-
-            clearMessages();
+            const errorDiv = document.getElementById('decryptError');
+            const qrStatus = document.getElementById('qrStatus');
+            
+            clearMessages('decrypt');
+            clearStorage(); // Clear previous data
 
             if (!file) {
                 errorDiv.innerHTML = 'No file selected.';
@@ -316,11 +529,25 @@
 
                     if (code) {
                         encryptedText = code.data;
-                        successDiv.innerHTML = 'QR code scanned successfully. Enter password to decrypt.';
-                        validateInputs();
+                        
+                        // Detect if it's encrypted or not
+                        isEncrypted = detectEncryption(encryptedText);
+                        saveToStorage(encryptedText, isEncrypted);
+                        
+                        if (isEncrypted) {
+                            qrStatus.textContent = 'QR code scanned successfully (encrypted). Enter password to decrypt.';
+                        } else {
+                            qrStatus.textContent = 'QR code scanned successfully (not encrypted). Click Decrypt to view.';
+                        }
+                        qrStatus.style.color = '#007bff';
+                        
+                        // Enable decrypt button
+                        document.getElementById('decryptButton').disabled = false;
                     } else {
                         encryptedText = '';
-                        errorDiv.innerHTML = 'Error: No QR code found in the image.';
+                        qrStatus.textContent = 'Error: No QR code found in the image.';
+                        qrStatus.style.color = 'red';
+                        document.getElementById('decryptButton').disabled = true;
                     }
                 };
                 img.onerror = function() {
@@ -335,22 +562,39 @@
             const video = document.getElementById('video');
             const videoContainer = document.getElementById('videoContainer');
             const uploadedImageDiv = document.getElementById('uploadedImage');
-            const errorDiv = document.getElementById('error');
-            const successDiv = document.getElementById('success');
+            const errorDiv = document.getElementById('decryptError');
+            const qrStatus = document.getElementById('qrStatus');
 
-            clearMessages();
+            clearMessages('decrypt');
             uploadedImageDiv.innerHTML = ''; // Clear uploaded image
+            qrStatus.textContent = 'Camera initializing...';
+            qrStatus.style.color = '#333';
 
             try {
+                // Try to use the back camera (environment) first
                 stream = await navigator.mediaDevices.getUserMedia({
-                    video: { facingMode: 'environment' }
+                    video: { facingMode: { ideal: 'environment' } }
                 });
                 video.srcObject = stream;
                 videoContainer.style.display = 'block';
                 scanning = true;
+                qrStatus.textContent = 'Camera active. Scanning for QR code...';
                 scanQRCode();
             } catch (err) {
-                errorDiv.innerHTML = 'Error accessing camera: ' + err.message;
+                // If that fails, try any available camera
+                try {
+                    stream = await navigator.mediaDevices.getUserMedia({
+                        video: true
+                    });
+                    video.srcObject = stream;
+                    videoContainer.style.display = 'block';
+                    scanning = true;
+                    qrStatus.textContent = 'Camera active. Scanning for QR code...';
+                    scanQRCode();
+                } catch (fallbackErr) {
+                    errorDiv.innerHTML = 'Error accessing camera: ' + fallbackErr.message;
+                    qrStatus.textContent = '';
+                }
             }
         }
 
@@ -369,8 +613,7 @@
             const video = document.getElementById('video');
             const canvas = document.createElement('canvas');
             const ctx = canvas.getContext('2d');
-            const errorDiv = document.getElementById('error');
-            const successDiv = document.getElementById('success');
+            const qrStatus = document.getElementById('qrStatus');
 
             function tick() {
                 if (!scanning) return;
@@ -379,24 +622,52 @@
                     canvas.width = video.videoWidth;
                     canvas.height = video.videoHeight;
                     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-                    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-                    const code = jsQR(imageData.data, imageData.width, imageData.height);
+                    
+                    try {
+                        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                        const code = jsQR(imageData.data, imageData.width, imageData.height);
 
-                    if (code) {
-                        encryptedText = code.data;
-                        successDiv.innerHTML = 'QR code scanned successfully. Enter password to decrypt.';
-                        validateInputs();
-                        stopCamera();
-                        return;
+                        if (code) {
+                            encryptedText = code.data;
+                            
+                            // Detect if it's encrypted or not
+                            isEncrypted = detectEncryption(encryptedText);
+                            saveToStorage(encryptedText, isEncrypted);
+                            
+                            const savedData = loadFromStorage();
+                            if (savedData && savedData.password) {
+                                document.getElementById('decryptPassword').value = savedData.password;
+                            }
+                            
+                            if (isEncrypted) {
+                                qrStatus.textContent = 'QR code scanned successfully (encrypted). Enter password to decrypt.';
+                            } else {
+                                qrStatus.textContent = 'QR code scanned successfully (not encrypted). Click Decrypt to view.';
+                            }
+                            qrStatus.style.color = '#007bff';
+                            
+                            // Enable decrypt button
+                            document.getElementById('decryptButton').disabled = false;
+                            
+                            // Sound notification if possible
+                            try {
+                                const audio = new Audio('data:audio/mp3;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU4Ljc2LjEwMAAAAAAAAAAAAAAA/+M4wAAAAAAAAAAAAEluZm8AAAAPAAAAAwAAAbAAiIiIiIiIiIiIiIiIiIiIiIiIv7+/v7+/v7+/v7+/v7+/v7+/v7+/39/f39/f39/f39/f39/f39/f39/f////////////////////////////////AAAAAExhdmM1OC4xMwAAAAAAAAAAAAAAACQCgAAAAAAAAAGww3XmOwAAAAAAAAAAAAAAAAD/+8DEAAAHiAN/tBAAJcPX730xk4AgCAIAgCQ7K6qkEEEcP4fwfh8Hw/D+IAgCAIAiDOMH8P4Pg/CAIAgD4Pg/h+D4Pg/g+CAIB8Hwfh/D4IAQBD+D4Pw/+H8Hwfh/B8HwfD+H8Hwfh+D+D4Ph/hvD8IfTqiJQXGxsbMXGxsEOX8uNjc3N5cbGxuNf5cbGxsEQGxsbjQGxsbGxsbt3x/h8Hwfg+CAIfweD4Ph8P4Pg+D+CAIAgCAIAgCIAgcAgD+D8IAgCAIAgCANBcbGxqAGxsbGFxczuMX/zNzc3GxsbjQXGxs1Ac3NzcbGxs1OM3NzcbGxuNBcbGxs1Ac3NxsbjY2NzcbG42agObm5uNjY3NmuAm5ubm42Nic3NzczNTmG42Nic3M3Nzc1OYbm5ObjYvNxubm5uampzDcbG40FxsZObjc3NxsXG40FxsbjQXGxsbGxs1Ac3NzY2NjczNTmG42Njc3JzczcbGxubmbjYnNzNzU1MzY2NjY3NzNTgG42NzcnNyc3NzY2Njc3JzcnNzc2MjczNjY2Nzc1OYbm42bk5uTm5ObipiamJuTm5Obk1MTUxNTGpiamJqYmpia25qbmamJqYmpialObM3JzcnNyalJuTm5Obm5MTU1NTE1MTUpiaY5MTUxLTE1KTe5Obm1KTcntyb3YnpdycnJyen5+j09PT8/Pz8/Pz8/Pz8/Pz8/Pz8/Px+fn5+fn5+fn5+fn5+fn5+fn5+AIBAIBAIBAIBAIBAIBAIB//HwYP////////////Hw///KDJf/73sMQRgxVwBPcsYGGDjAD3LYAFBXJ//JDJf//giBv//wS+N///hYE//+vhYULxQsW//54KAgF/9WCgYXihYt//zAUBAL/6sFAwvFCxb//ngoCAX/1YKBheKFi3//MBQEA/9fCgYXihYt//zAUBAL/54KBheKFi3//MBQEA//rwsDBf/+CCgYN//wUFCxr/qwsDA//+DCgYN//wUFA///roUFCxr//oKBg3//BQUD//9dCgoWNf/9BQMG//4KCgf//6aCweKCgYt//0FAwb//h4KB//+ngoHigoGLf/9BQMG//KDJf/73sMQPgAAAJsAAAAjAAADSAAAAE/8HP///wQyX///BDD///D4eAgA');
+                                audio.play();
+                            } catch (e) {
+                                // Ignore audio errors
+                            }
+                            
+                            stopCamera();
+                            return;
+                        }
+                    } catch (err) {
+                        // Ignore processing errors during scanning
                     }
                 }
                 requestAnimationFrame(tick);
             }
             requestAnimationFrame(tick);
         }
-
-        // Initialize button states
-        validateInputs();
     </script>
 </body>
 </html>
