@@ -47,6 +47,7 @@
             border-radius: 4px;
             cursor: pointer;
             margin-right: 10px;
+            margin-bottom: 10px;
         }
         button:hover {
             background-color: #0056b3;
@@ -76,6 +77,11 @@
         #videoContainer {
             display: none;
         }
+        .password-info {
+            font-size: 0.8em;
+            color: #666;
+            margin-bottom: 10px;
+        }
     </style>
 </head>
 <body>
@@ -87,6 +93,7 @@
         <textarea id="encryptText" rows="4" placeholder="Enter text to encrypt"></textarea>
         <label for="encryptPassword">Password:</label>
         <input type="password" id="encryptPassword" placeholder="Enter password">
+        <p class="password-info">Choose a strong password. This will be used to scramble your text.</p>
         <button id="generateQRButton" onclick="encryptAndGenerateQR()">Generate QR Code</button>
         <button id="downloadButton" style="display: none;" onclick="downloadQR()">Download QR Code</button>
         <div id="qrCode"></div>
@@ -117,6 +124,13 @@
         let encryptedText = '';
         let scanning = false;
 
+        // Clear message divs
+        function clearMessages() {
+            document.querySelectorAll('#error, #success').forEach(el => {
+                el.innerHTML = '';
+            });
+        }
+
         // Validate input fields and enable/disable buttons
         function validateInputs() {
             const encryptText = document.getElementById('encryptText').value.trim();
@@ -134,6 +148,14 @@
         document.getElementById('encryptPassword').addEventListener('input', validateInputs);
         document.getElementById('decryptPassword').addEventListener('input', validateInputs);
 
+        // Function to derive a secure key from the password
+        function deriveKey(password) {
+            // Use PBKDF2 to derive a key from the password with a static salt
+            // In a production environment, you'd want to use a unique salt per encryption
+            const salt = "QRCodeEncryptor2025"; // Static salt for simplicity
+            return CryptoJS.PBKDF2(password, salt, { keySize: 256/32, iterations: 1000 }).toString();
+        }
+
         function encryptAndGenerateQR() {
             const text = document.getElementById('encryptText').value.trim();
             const password = document.getElementById('encryptPassword').value.trim();
@@ -142,8 +164,7 @@
             const successDiv = document.getElementById('success');
 
             qrCodeDiv.innerHTML = ''; // Clear previous QR code
-            errorDiv.innerHTML = '';
-            successDiv.innerHTML = '';
+            clearMessages();
 
             if (!text || !password) {
                 errorDiv.innerHTML = 'Please enter both text and password.';
@@ -151,13 +172,26 @@
             }
 
             try {
-                // Encrypt the text using AES
-                const encrypted = CryptoJS.AES.encrypt(text, password).toString();
-                encryptedText = encrypted;
+                // Get a secure key from the password
+                const key = deriveKey(password);
+                
+                // Generate a random IV for better security
+                const iv = CryptoJS.lib.WordArray.random(16);
+                
+                // Encrypt the text using AES with the derived key and IV
+                const encrypted = CryptoJS.AES.encrypt(text, key, {
+                    iv: iv,
+                    padding: CryptoJS.pad.Pkcs7,
+                    mode: CryptoJS.mode.CBC
+                });
+                
+                // Combine IV and encrypted data for storage
+                // Format: iv:encrypted
+                encryptedText = iv.toString() + ':' + encrypted.toString();
 
                 // Generate QR code with encrypted text
                 new QRCode(qrCodeDiv, {
-                    text: encrypted,
+                    text: encryptedText,
                     width: 256,
                     height: 256,
                     colorDark: '#000000',
@@ -192,8 +226,7 @@
             const successDiv = document.getElementById('success');
 
             resultDiv.innerHTML = '';
-            errorDiv.innerHTML = '';
-            successDiv.innerHTML = '';
+            clearMessages();
 
             if (!encryptedText || !password) {
                 errorDiv.innerHTML = 'Please scan a QR code and enter a password.';
@@ -201,8 +234,41 @@
             }
 
             try {
-                // Decrypt the text using AES
-                const bytes = CryptoJS.AES.decrypt(encryptedText, password);
+                // Split IV and encrypted data
+                const parts = encryptedText.split(':');
+                
+                if (parts.length !== 2) {
+                    // Handle legacy format (without IV) or invalid format
+                    try {
+                        // Try to decrypt directly (old format)
+                        const bytes = CryptoJS.AES.decrypt(encryptedText, password);
+                        const decrypted = bytes.toString(CryptoJS.enc.Utf8);
+                        
+                        if (!decrypted) {
+                            throw new Error('Decryption failed. Incorrect password or invalid QR code.');
+                        }
+                        
+                        resultDiv.innerHTML = `<strong>Decrypted Text:</strong> ${decrypted}`;
+                        successDiv.innerHTML = 'Text decrypted successfully!';
+                        return;
+                    } catch (e) {
+                        throw new Error('Invalid QR code format or incorrect password.');
+                    }
+                }
+                
+                const iv = parts[0];
+                const encryptedData = parts[1];
+                
+                // Get key from password
+                const key = deriveKey(password);
+                
+                // Decrypt with IV and key
+                const bytes = CryptoJS.AES.decrypt(encryptedData, key, {
+                    iv: CryptoJS.enc.Hex.parse(iv),
+                    padding: CryptoJS.pad.Pkcs7,
+                    mode: CryptoJS.mode.CBC
+                });
+                
                 const decrypted = bytes.toString(CryptoJS.enc.Utf8);
 
                 if (!decrypted) {
@@ -222,8 +288,7 @@
             const errorDiv = document.getElementById('error');
             const successDiv = document.getElementById('success');
 
-            errorDiv.innerHTML = '';
-            successDiv.innerHTML = '';
+            clearMessages();
 
             if (!file) {
                 errorDiv.innerHTML = 'No file selected.';
@@ -273,8 +338,7 @@
             const errorDiv = document.getElementById('error');
             const successDiv = document.getElementById('success');
 
-            errorDiv.innerHTML = '';
-            successDiv.innerHTML = '';
+            clearMessages();
             uploadedImageDiv.innerHTML = ''; // Clear uploaded image
 
             try {
