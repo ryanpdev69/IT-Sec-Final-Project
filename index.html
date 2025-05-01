@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>QR Code Encryptor/Decryptor</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.2.0/crypto-js.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jsqr/1.4.0/jsQR.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f0f0f0;
+        }
+        h1 {
+            text-align: center;
+            color: #333;
+        }
+        .section {
+            background: white;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        label {
+            display: block;
+            margin: 10px 0 5px;
+            font-weight: bold;
+        }
+        input, textarea {
+            width: 100%;
+            padding: 8px;
+            margin-bottom: 10px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-right: 10px;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+        #qrCode, #decryptedResult, #uploadedImage, #videoContainer {
+            margin-top: 20px;
+            text-align: center;
+        }
+        #error, #success {
+            margin-top: 10px;
+        }
+        #error {
+            color: red;
+        }
+        #success {
+            color: green;
+        }
+        #uploadedImage img, #video {
+            max-width: 100%;
+            max-height: 300px;
+            border: 1px solid #ccc;
+        }
+        #videoContainer {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <h1>QR Code Encryptor/Decryptor</h1>
+
+    <div class="section">
+        <h2>Encrypt Text to QR Code</h2>
+        <label for="encryptText">Text to Encrypt:</label>
+        <textarea id="encryptText" rows="4" placeholder="Enter text to encrypt"></textarea>
+        <label for="encryptPassword">Password:</label>
+        <input type="password" id="encryptPassword" placeholder="Enter password">
+        <button id="generateQRButton" onclick="encryptAndGenerateQR()">Generate QR Code</button>
+        <button id="downloadButton" style="display: none;" onclick="downloadQR()">Download QR Code</button>
+        <div id="qrCode"></div>
+        <div id="success"></div>
+        <div id="error"></div>
+    </div>
+
+    <div class="section">
+        <h2>Decrypt QR Code</h2>
+        <label for="qrImage">Upload QR Code Image:</label>
+        <input type="file" id="qrImage" accept="image/*">
+        <button id="scanCameraButton" onclick="startCamera()">Scan QR Code with Camera</button>
+        <div id="uploadedImage"></div>
+        <div id="videoContainer">
+            <video id="video" autoplay muted playsinline></video>
+            <button onclick="stopCamera()">Stop Camera</button>
+        </div>
+        <label for="decryptPassword">Password:</label>
+        <input type="password" id="decryptPassword" placeholder="Enter password">
+        <button id="decryptButton" onclick="decryptText()" disabled>Decrypt QR Code</button>
+        <div id="decryptedResult"></div>
+        <div id="success"></div>
+        <div id="error"></div>
+    </div>
+
+    <script>
+        let stream = null;
+        let encryptedText = '';
+        let scanning = false;
+
+        // Validate input fields and enable/disable buttons
+        function validateInputs() {
+            const encryptText = document.getElementById('encryptText').value.trim();
+            const encryptPassword = document.getElementById('encryptPassword').value.trim();
+            const decryptPassword = document.getElementById('decryptPassword').value.trim();
+            const generateQRButton = document.getElementById('generateQRButton');
+            const decryptButton = document.getElementById('decryptButton');
+
+            generateQRButton.disabled = !encryptText || !encryptPassword;
+            decryptButton.disabled = !encryptedText || !decryptPassword;
+        }
+
+        // Add input event listeners for real-time validation
+        document.getElementById('encryptText').addEventListener('input', validateInputs);
+        document.getElementById('encryptPassword').addEventListener('input', validateInputs);
+        document.getElementById('decryptPassword').addEventListener('input', validateInputs);
+
+        function encryptAndGenerateQR() {
+            const text = document.getElementById('encryptText').value.trim();
+            const password = document.getElementById('encryptPassword').value.trim();
+            const qrCodeDiv = document.getElementById('qrCode');
+            const errorDiv = document.getElementById('error');
+            const successDiv = document.getElementById('success');
+
+            qrCodeDiv.innerHTML = ''; // Clear previous QR code
+            errorDiv.innerHTML = '';
+            successDiv.innerHTML = '';
+
+            if (!text || !password) {
+                errorDiv.innerHTML = 'Please enter both text and password.';
+                return;
+            }
+
+            try {
+                // Encrypt the text using AES
+                const encrypted = CryptoJS.AES.encrypt(text, password).toString();
+                encryptedText = encrypted;
+
+                // Generate QR code with encrypted text
+                new QRCode(qrCodeDiv, {
+                    text: encrypted,
+                    width: 256,
+                    height: 256,
+                    colorDark: '#000000',
+                    colorLight: '#ffffff',
+                    correctLevel: QRCode.CorrectLevel.H
+                });
+
+                // Show download button and success message
+                document.getElementById('downloadButton').style.display = 'inline-block';
+                successDiv.innerHTML = 'QR code generated successfully!';
+            } catch (e) {
+                errorDiv.innerHTML = 'Error generating QR code: ' + e.message;
+            }
+        }
+
+        function downloadQR() {
+            const qrCanvas = document.querySelector('#qrCode canvas');
+            if (qrCanvas) {
+                const link = document.createElement('a');
+                link.href = qrCanvas.toDataURL('image/png');
+                link.download = 'encrypted_qr_code.png';
+                link.click();
+            } else {
+                document.getElementById('error').innerHTML = 'No QR code available to download.';
+            }
+        }
+
+        function decryptText() {
+            const password = document.getElementById('decryptPassword').value.trim();
+            const resultDiv = document.getElementById('decryptedResult');
+            const errorDiv = document.getElementById('error');
+            const successDiv = document.getElementById('success');
+
+            resultDiv.innerHTML = '';
+            errorDiv.innerHTML = '';
+            successDiv.innerHTML = '';
+
+            if (!encryptedText || !password) {
+                errorDiv.innerHTML = 'Please scan a QR code and enter a password.';
+                return;
+            }
+
+            try {
+                // Decrypt the text using AES
+                const bytes = CryptoJS.AES.decrypt(encryptedText, password);
+                const decrypted = bytes.toString(CryptoJS.enc.Utf8);
+
+                if (!decrypted) {
+                    throw new Error('Decryption failed. Incorrect password or invalid QR code.');
+                }
+
+                resultDiv.innerHTML = `<strong>Decrypted Text:</strong> ${decrypted}`;
+                successDiv.innerHTML = 'Text decrypted successfully!';
+            } catch (e) {
+                errorDiv.innerHTML = 'Error: ' + e.message;
+            }
+        }
+
+        // Handle QR code image upload
+        document.getElementById('qrImage').addEventListener('change', function(event) {
+            const file = event.target.files[0];
+            const errorDiv = document.getElementById('error');
+            const successDiv = document.getElementById('success');
+
+            errorDiv.innerHTML = '';
+            successDiv.innerHTML = '';
+
+            if (!file) {
+                errorDiv.innerHTML = 'No file selected.';
+                return;
+            }
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const img = new Image();
+                img.src = e.target.result;
+                img.onload = function() {
+                    // Display uploaded image
+                    const uploadedImageDiv = document.getElementById('uploadedImage');
+                    uploadedImageDiv.innerHTML = '';
+                    uploadedImageDiv.appendChild(img);
+
+                    // Scan QR code
+                    const canvas = document.createElement('canvas');
+                    canvas.width = img.width;
+                    canvas.height = img.height;
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(img, 0, 0, img.width, img.height);
+                    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                    const code = jsQR(imageData.data, imageData.width, imageData.height);
+
+                    if (code) {
+                        encryptedText = code.data;
+                        successDiv.innerHTML = 'QR code scanned successfully. Enter password to decrypt.';
+                        validateInputs();
+                    } else {
+                        encryptedText = '';
+                        errorDiv.innerHTML = 'Error: No QR code found in the image.';
+                    }
+                };
+                img.onerror = function() {
+                    errorDiv.innerHTML = 'Error: Invalid image file.';
+                };
+            };
+            reader.readAsDataURL(file);
+        });
+
+        // Handle camera scanning
+        async function startCamera() {
+            const video = document.getElementById('video');
+            const videoContainer = document.getElementById('videoContainer');
+            const uploadedImageDiv = document.getElementById('uploadedImage');
+            const errorDiv = document.getElementById('error');
+            const successDiv = document.getElementById('success');
+
+            errorDiv.innerHTML = '';
+            successDiv.innerHTML = '';
+            uploadedImageDiv.innerHTML = ''; // Clear uploaded image
+
+            try {
+                stream = await navigator.mediaDevices.getUserMedia({
+                    video: { facingMode: 'environment' }
+                });
+                video.srcObject = stream;
+                videoContainer.style.display = 'block';
+                scanning = true;
+                scanQRCode();
+            } catch (err) {
+                errorDiv.innerHTML = 'Error accessing camera: ' + err.message;
+            }
+        }
+
+        function stopCamera() {
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+                stream = null;
+            }
+            scanning = false;
+            document.getElementById('videoContainer').style.display = 'none';
+        }
+
+        function scanQRCode() {
+            if (!scanning) return;
+
+            const video = document.getElementById('video');
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            const errorDiv = document.getElementById('error');
+            const successDiv = document.getElementById('success');
+
+            function tick() {
+                if (!scanning) return;
+
+                if (video.readyState === video.HAVE_ENOUGH_DATA) {
+                    canvas.width = video.videoWidth;
+                    canvas.height = video.videoHeight;
+                    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                    const code = jsQR(imageData.data, imageData.width, imageData.height);
+
+                    if (code) {
+                        encryptedText = code.data;
+                        successDiv.innerHTML = 'QR code scanned successfully. Enter password to decrypt.';
+                        validateInputs();
+                        stopCamera();
+                        return;
+                    }
+                }
+                requestAnimationFrame(tick);
+            }
+            requestAnimationFrame(tick);
+        }
+
+        // Initialize button states
+        validateInputs();
+    </script>
+</body>
+</html>
