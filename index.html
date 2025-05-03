@@ -14,6 +14,7 @@
             --seafoam: #55efc4;
             --light-seafoam: #81ecec;
             --white: #f5f6fa;
+            --blur-amount: 10px;
         }
         
         * {
@@ -24,17 +25,52 @@
         
         body {
             font-family: 'Segoe UI', Arial, sans-serif;
-            background-color: var(--charcoal);
             color: var(--white);
             max-width: 1200px;
             margin: 0 auto;
             padding: 20px;
             line-height: 1.6;
+            overflow-x: hidden;
+            position: relative;
+            min-height: 100vh;
+        }
+        
+        /* Live background */
+        .background {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            z-index: -1;
+            background: linear-gradient(135deg, #2d3436, #0f2027);
+            overflow: hidden;
+        }
+        
+        .bubble {
+            position: absolute;
+            border-radius: 50%;
+            background: radial-gradient(circle at 30% 30%, var(--seafoam), transparent);
+            opacity: 0.4;
+            animation: float 15s infinite ease-in-out;
+        }
+        
+        @keyframes float {
+            0% {
+                transform: translate(0, 0) scale(1);
+            }
+            50% {
+                transform: translate(100px, -100px) scale(1.1);
+            }
+            100% {
+                transform: translate(0, 0) scale(1);
+            }
         }
         
         h1, h2, h3 {
             color: var(--seafoam);
             margin-bottom: 1rem;
+            text-shadow: 0 2px 5px rgba(0, 0, 0, 0.3);
         }
         
         p {
@@ -52,10 +88,13 @@
             flex: 1;
             min-width: 280px;
             padding: 25px;
-            background-color: var(--dark-charcoal);
+            background-color: rgba(30, 36, 37, 0.7); /* Semi-transparent */
+            backdrop-filter: blur(var(--blur-amount));
+            -webkit-backdrop-filter: blur(var(--blur-amount));
             border-radius: 12px;
-            box-shadow: 0 6px 10px rgba(0, 0, 0, 0.2);
+            box-shadow: 0 6px 15px rgba(0, 0, 0, 0.3);
             transition: transform 0.3s ease;
+            border: 1px solid rgba(85, 239, 196, 0.2);
         }
         
         .column:hover {
@@ -112,11 +151,17 @@
             transform: translateY(0);
         }
         
-        #qrcode img {
+        #qrcode {
+            display: flex;
+            justify-content: center;
             margin-top: 15px;
+        }
+        
+        #qrcode img {
             max-width: 100%;
             border: 3px solid var(--seafoam);
             border-radius: 8px;
+            background-color: white;
         }
         
         #qr-reader {
@@ -151,25 +196,6 @@
             font-weight: 500;
         }
         
-        .password-input {
-            display: flex;
-            gap: 10px;
-        }
-        
-        .password-input input {
-            flex-grow: 1;
-            padding: 10px;
-            border-radius: 8px;
-            border: 1px solid var(--seafoam);
-            background-color: rgba(255, 255, 255, 0.9);
-        }
-        
-        .password-input input:focus {
-            outline: none;
-            border: 1px solid var(--light-seafoam);
-            box-shadow: 0 0 0 3px rgba(85, 239, 196, 0.3);
-        }
-        
         /* Responsive adjustments */
         @media screen and (max-width: 768px) {
             body {
@@ -188,13 +214,16 @@
         
         /* Dark mode enhancements */
         @media (prefers-color-scheme: dark) {
-            textarea, .password-input input {
+            textarea {
                 background-color: rgba(255, 255, 255, 0.8);
             }
         }
     </style>
 </head>
 <body>
+    <!-- Live background -->
+    <div class="background" id="animated-background"></div>
+    
     <h1>Secure QR Messenger</h1>
     
     <div class="container">
@@ -232,6 +261,34 @@
     </div>
 
     <script>
+        // Create animated background bubbles
+        function createAnimatedBackground() {
+            const container = document.getElementById('animated-background');
+            const bubbleCount = 8;
+            
+            for (let i = 0; i < bubbleCount; i++) {
+                const bubble = document.createElement('div');
+                bubble.className = 'bubble';
+                
+                // Random size between 100px and 300px
+                const size = Math.random() * 200 + 100;
+                bubble.style.width = `${size}px`;
+                bubble.style.height = `${size}px`;
+                
+                // Random position
+                bubble.style.left = `${Math.random() * 100}%`;
+                bubble.style.top = `${Math.random() * 100}%`;
+                
+                // Random animation delay
+                bubble.style.animationDelay = `${Math.random() * 5}s`;
+                
+                // Random animation duration between 15s and 30s
+                bubble.style.animationDuration = `${15 + Math.random() * 15}s`;
+                
+                container.appendChild(bubble);
+            }
+        }
+        
         // Encryption key and IV - in a real application, these should be securely managed
         const fixedKey = "ThisIsAFixedKey123456789012345678901234";
         const fixedIV = "1234567890123456";
@@ -300,7 +357,7 @@
             document.getElementById('downloadContainer').style.display = 'block';
         }
         
-        // Function to download QR code as an image
+        // Function to download QR code as an image - Fixed for mobile
         function downloadQRCode() {
             // Get the QR code image from the DOM
             const qrCodeImg = document.querySelector('#qrcode img');
@@ -310,38 +367,64 @@
                 return;
             }
             
-            // Create a temporary canvas to convert the QR code to PNG
+            // Create a canvas to properly render the QR code
             const canvas = document.createElement('canvas');
             const context = canvas.getContext('2d');
             
-            // Set canvas dimensions to match QR code
-            canvas.width = qrCodeImg.width;
-            canvas.height = qrCodeImg.height;
+            // Use the natural width and height of the image
+            canvas.width = qrCodeImg.naturalWidth || 256;
+            canvas.height = qrCodeImg.naturalHeight || 256;
             
-            // Draw the QR code image on the canvas
+            // Fill white background
             context.fillStyle = '#ffffff';
             context.fillRect(0, 0, canvas.width, canvas.height);
             
-            // Create a new image to ensure the image is fully loaded
-            const img = new Image();
-            img.onload = function() {
-                context.drawImage(img, 0, 0);
-                
-                // Convert canvas to data URL
-                const dataURL = canvas.toDataURL('image/png');
-                
-                // Create a temporary link for downloading
-                const downloadLink = document.createElement('a');
-                downloadLink.href = dataURL;
-                downloadLink.download = 'secure-qr-code.png';
-                
-                // Trigger the download
-                document.body.appendChild(downloadLink);
-                downloadLink.click();
-                document.body.removeChild(downloadLink);
-            };
+            // Draw the image
+            context.drawImage(qrCodeImg, 0, 0);
             
-            img.src = qrCodeImg.src;
+            try {
+                // Mobile-friendly method using Blob
+                canvas.toBlob(function(blob) {
+                    if (blob) {
+                        // Create object URL
+                        const url = URL.createObjectURL(blob);
+                        
+                        // Create download link
+                        const downloadLink = document.createElement('a');
+                        downloadLink.href = url;
+                        downloadLink.download = 'secure-qr-code.png';
+                        
+                        // Programmatically click the link to trigger download
+                        document.body.appendChild(downloadLink);
+                        downloadLink.click();
+                        document.body.removeChild(downloadLink);
+                        
+                        // Clean up the URL object
+                        setTimeout(function() {
+                            URL.revokeObjectURL(url);
+                        }, 1000);
+                    } else {
+                        alert("Could not create image file. Please try another browser.");
+                    }
+                }, 'image/png');
+            } catch (e) {
+                // Fallback for older browsers
+                try {
+                    const dataURL = canvas.toDataURL('image/png');
+                    
+                    const downloadLink = document.createElement('a');
+                    downloadLink.href = dataURL;
+                    downloadLink.download = 'secure-qr-code.png';
+                    downloadLink.style.display = 'none';
+                    
+                    document.body.appendChild(downloadLink);
+                    downloadLink.click();
+                    document.body.removeChild(downloadLink);
+                } catch (err) {
+                    alert("Download failed. Your browser may not support this feature.");
+                    console.error("Download error:", err);
+                }
+            }
         }
         
         // Initialize QR code scanner
@@ -500,6 +583,7 @@
         
         // Initialize the app when the DOM is fully loaded
         document.addEventListener('DOMContentLoaded', () => {
+            createAnimatedBackground();
             initializeScanner();
         });
     </script>
