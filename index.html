@@ -180,7 +180,7 @@
     border-left: 4px solid var(--seafoam);
     border-radius: 4px;
     word-break: break-all;
-    max-height: 200px;
+    max-height: 300px;
     overflow-y: auto;
     white-space: pre-wrap;
     font-family: monospace; /* Better for encrypted text */
@@ -192,8 +192,11 @@
     padding: 0;
     white-space: pre-wrap;
     word-break: break-all;
-    font-family: inherit;
+    font-family: monospace;
+    overflow-wrap: break-word; /* Add this to handle long unbreakable strings */
+    max-width: 100%; /* Ensure it doesn't overflow horizontally */
 }
+        
        #decryptedMessage {
     margin-top: 15px;
     padding: 15px;
@@ -294,6 +297,12 @@
                 background-color: rgba(255, 255, 255, 0.8);
             }
         }
+        @media screen and (max-width: 768px) {
+    #encryptedText, #decryptedMessage {
+        max-height: 150px;
+        font-size: 14px;
+    }
+}
     </style>
 </head>
 <body>
@@ -474,7 +483,7 @@ function generateQRCode(text) {
         const qrCode = new QRCode(document.getElementById('qrcode'), qrOptions);
         
         // Display the encrypted text (truncated if too long)
-        const displayText = text.length > 100 ? text.substring(0, 100) + '...' : text;
+        const displayText = text;
         document.getElementById('encryptedText').innerHTML = 
     `<h3>Encrypted Text:</h3>
      <pre>${displayText}</pre>
