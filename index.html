@@ -58,15 +58,19 @@
         #qr-reader {
             width: 100%;
         }
-        #decryptedMessage {
+        #decryptedMessage, #encryptedText {
             margin-top: 15px;
             padding: 10px;
             background-color: #e9f7ef;
             border-radius: 4px;
+            word-break: break-all;
         }
         .error {
             color: #d9534f;
             margin-top: 10px;
+        }
+        .encrypted-input {
+            margin-top: 15px;
         }
     </style>
 </head>
@@ -79,6 +83,7 @@
             <h2>Encrypt Message</h2>
             <textarea id="message" placeholder="Type your message here"></textarea>
             <button id="encryptButton">Encrypt & Generate QR</button>
+            <div id="encryptedText"></div>
             <div id="qrcode"></div>
             <div id="downloadContainer" style="display:none; margin-top:10px;">
                 <button id="downloadQrButton">Download QR Code</button>
@@ -94,6 +99,13 @@
             
             <h3>Or Upload QR Code</h3>
             <input type="file" id="qrFileInput" accept="image/*">
+            
+            <div class="encrypted-input">
+                <h3>Or Enter Encrypted Text</h3>
+                <textarea id="encryptedInput" placeholder="Paste encrypted text here"></textarea>
+                <button id="decryptButton">Decrypt Text</button>
+            </div>
+            
             <div id="scanResult"></div>
             <div id="decryptedMessage"></div>
         </div>
@@ -159,6 +171,11 @@
                 correctLevel: QRCode.CorrectLevel.H
             });
             
+            // Display the encrypted text
+            document.getElementById('encryptedText').innerHTML = 
+                `<h3>Encrypted Text:</h3>
+                 <p>${text}</p>`;
+            
             // Show download button
             document.getElementById('downloadContainer').style.display = 'block';
         }
@@ -184,20 +201,27 @@
             // Draw the QR code image on the canvas
             context.fillStyle = '#ffffff';
             context.fillRect(0, 0, canvas.width, canvas.height);
-            context.drawImage(qrCodeImg, 0, 0);
             
-            // Convert canvas to data URL
-            const dataURL = canvas.toDataURL('image/png');
+            // Create a new image to ensure the image is fully loaded
+            const img = new Image();
+            img.onload = function() {
+                context.drawImage(img, 0, 0);
+                
+                // Convert canvas to data URL
+                const dataURL = canvas.toDataURL('image/png');
+                
+                // Create a temporary link for downloading
+                const downloadLink = document.createElement('a');
+                downloadLink.href = dataURL;
+                downloadLink.download = 'secure-qr-code.png';
+                
+                // Trigger the download
+                document.body.appendChild(downloadLink);
+                downloadLink.click();
+                document.body.removeChild(downloadLink);
+            };
             
-            // Create a temporary link for downloading
-            const downloadLink = document.createElement('a');
-            downloadLink.href = dataURL;
-            downloadLink.download = 'secure-qr-code.png';
-            
-            // Trigger the download
-            document.body.appendChild(downloadLink);
-            downloadLink.click();
-            document.body.removeChild(downloadLink);
+            img.src = qrCodeImg.src;
         }
         
         // Initialize QR code scanner
@@ -275,6 +299,23 @@
             }
         });
         
+        // Initialize manual decryption from text input
+        document.getElementById('decryptButton').addEventListener('click', () => {
+            const encryptedText = document.getElementById('encryptedInput').value.trim();
+            
+            if (!encryptedText) {
+                alert("Please enter encrypted text to decrypt");
+                return;
+            }
+            
+            const decryptedMessage = decryptText(encryptedText);
+            document.getElementById('scanResult').innerHTML = 
+                `<p>Decryption from text input:</p>`;
+            document.getElementById('decryptedMessage').innerHTML = 
+                `<h3>Decrypted Message:</h3>
+                 <p>${decryptedMessage}</p>`;
+        });
+        
         // Process uploaded QR code image
         function processQRFromImage(file) {
             const reader = new FileReader();
@@ -333,6 +374,9 @@
                 processQRFromImage(file);
             }
         });
+        
+        // Initialize the download button
+        document.getElementById('downloadQrButton').addEventListener('click', downloadQRCode);
         
         // Initialize the app when the DOM is fully loaded
         document.addEventListener('DOMContentLoaded', () => {
