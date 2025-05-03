@@ -173,16 +173,26 @@
             border-radius: 8px;
             overflow: hidden;
         }
-        #encryptedText {
+      #encryptedText {
     margin-top: 15px;
     padding: 15px;
     background-color: rgba(85, 239, 196, 0.1);
     border-left: 4px solid var(--seafoam);
     border-radius: 4px;
     word-break: break-all;
-    max-height: 200px; /* Set a fixed height */
-    overflow-y: auto; /* Enable vertical scrolling */
-    white-space: pre-wrap; /* Preserve line breaks */
+    max-height: 200px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    font-family: monospace; /* Better for encrypted text */
+    line-height: 1.4;
+}
+
+#encryptedText pre {
+    margin: 0;
+    padding: 0;
+    white-space: pre-wrap;
+    word-break: break-all;
+    font-family: inherit;
 }
        #decryptedMessage {
     margin-top: 15px;
@@ -466,11 +476,11 @@ function generateQRCode(text) {
         // Display the encrypted text (truncated if too long)
         const displayText = text.length > 100 ? text.substring(0, 100) + '...' : text;
         document.getElementById('encryptedText').innerHTML = 
-            `<h3>Encrypted Text:</h3>
-             <p>${displayText}</p>
-             <div class="info-text">
-                <small>Text length: ${text.length} characters</small>
-             </div>`;
+    `<h3>Encrypted Text:</h3>
+     <pre>${displayText}</pre>
+     <div class="info-text">
+        <small>Text length: ${text.length} characters</small>
+     </div>`;
         
         // Show download button
         document.getElementById('downloadContainer').style.display = 'block';
