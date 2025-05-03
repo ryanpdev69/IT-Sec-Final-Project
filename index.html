@@ -226,6 +226,28 @@
             color: var(--seafoam);
             font-weight: 500;
         }
+        /* Custom scrollbar for the encrypted/decrypted text areas */
+#encryptedText::-webkit-scrollbar,
+#decryptedMessage::-webkit-scrollbar {
+    width: 8px;
+}
+
+#encryptedText::-webkit-scrollbar-track,
+#decryptedMessage::-webkit-scrollbar-track {
+    background: rgba(85, 239, 196, 0.1);
+    border-radius: 4px;
+}
+
+#encryptedText::-webkit-scrollbar-thumb,
+#decryptedMessage::-webkit-scrollbar-thumb {
+    background: var(--seafoam);
+    border-radius: 4px;
+}
+
+#encryptedText::-webkit-scrollbar-thumb:hover,
+#decryptedMessage::-webkit-scrollbar-thumb:hover {
+    background: var(--light-seafoam);
+}
         
         /* Responsive adjustments */
         @media screen and (max-width: 768px) {
