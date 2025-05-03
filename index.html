@@ -296,472 +296,404 @@
 
     <script>
         // Create animated background bubbles
-        function createAnimatedBackground() {
-            const container = document.getElementById('animated-background');
-            const bubbleCount = 8;
-            
-            for (let i = 0; i < bubbleCount; i++) {
-                const bubble = document.createElement('div');
-                bubble.className = 'bubble';
-                
-                // Random size between 100px and 300px
-                const size = Math.random() * 200 + 100;
-                bubble.style.width = `${size}px`;
-                bubble.style.height = `${size}px`;
-                
-                // Random position
-                bubble.style.left = `${Math.random() * 100}%`;
-                bubble.style.top = `${Math.random() * 100}%`;
-                
-                // Random animation delay
-                bubble.style.animationDelay = `${Math.random() * 5}s`;
-                
-                // Random animation duration between 15s and 30s
-                bubble.style.animationDuration = `${15 + Math.random() * 15}s`;
-                
-                container.appendChild(bubble);
-            }
+function createAnimatedBackground() {
+    const container = document.getElementById('animated-background');
+    const bubbleCount = 8;
+    
+    for (let i = 0; i < bubbleCount; i++) {
+        const bubble = document.createElement('div');
+        bubble.className = 'bubble';
+        
+        // Random size between 100px and 300px
+        const size = Math.random() * 200 + 100;
+        bubble.style.width = `${size}px`;
+        bubble.style.height = `${size}px`;
+        
+        // Random position
+        bubble.style.left = `${Math.random() * 100}%`;
+        bubble.style.top = `${Math.random() * 100}%`;
+        
+        // Random animation delay
+        bubble.style.animationDelay = `${Math.random() * 5}s`;
+        
+        // Random animation duration between 15s and 30s
+        bubble.style.animationDuration = `${15 + Math.random() * 15}s`;
+        
+        container.appendChild(bubble);
+    }
+}
+
+// Encryption key and IV - in a real application, these should be securely managed
+const fixedKey = "ThisIsAFixedKey123456789012345678901234";
+const fixedIV = "1234567890123456";
+
+let html5QrCode = null;
+
+// QR Code capacity limits (in bytes) for error correction level H
+const QR_CAPACITY = {
+    L: 2953, // Low - 7%
+    M: 2331, // Medium - 15%
+    Q: 1663, // Quartile - 25%
+    H: 1273  // High - 30% (we're using this level)
+};
+
+// Function to check if text will fit in QR code
+function checkQRCapacity(text) {
+    // Calculate byte length of encrypted text (approximate)
+    // Base64 encoding increases size by roughly 33%
+    const estimatedEncryptedLength = Math.ceil(text.length * 1.33);
+    
+    // Check against QR capacity for level H
+    if (estimatedEncryptedLength > QR_CAPACITY.H) {
+        const maxChars = Math.floor(QR_CAPACITY.H / 1.33);
+        return {
+            fits: false,
+            maxLength: maxChars,
+            currentLength: text.length
+        };
+    }
+    
+    return { fits: true };
+}
+
+// Function to encrypt text using AES (CBC mode)
+function encryptText(text) {
+    try {
+        // Check QR capacity first
+        const capacityCheck = checkQRCapacity(text);
+        if (!capacityCheck.fits) {
+            return {
+                error: true,
+                message: `Text too long for QR code. Maximum ~${capacityCheck.maxLength} characters, you have ${capacityCheck.currentLength}.`
+            };
         }
         
-        // Encryption key and IV - in a real application, these should be securely managed
-        const fixedKey = "ThisIsAFixedKey123456789012345678901234";
-        const fixedIV = "1234567890123456";
+        const key = CryptoJS.enc.Utf8.parse(fixedKey.slice(0, 32)); // AES-256 requires 32 bytes
+        const iv = CryptoJS.enc.Utf8.parse(fixedIV.slice(0, 16));   // IV should be 16 bytes
         
-        let html5QrCode = null;
+        const encrypted = CryptoJS.AES.encrypt(text, key, {
+            iv: iv,
+            mode: CryptoJS.mode.CBC,
+            padding: CryptoJS.pad.Pkcs7
+        });
         
-        // QR Code capacity limits (in bytes) for error correction level H
-        const QR_CAPACITY = {
-            L: 2953, // Low - 7%
-            M: 2331, // Medium - 15%
-            Q: 1663, // Quartile - 25%
-            H: 1273  // High - 30% (we're using this level)
+        return {
+            error: false,
+            text: encrypted.toString()
+        };
+    } catch (error) {
+        console.error("Encryption error:", error);
+        return {
+            error: true,
+            message: "Encryption failed: " + error.message
+        };
+    }
+}
+
+// Function to decrypt text using AES (CBC mode)
+function decryptText(encryptedText) {
+    try {
+        const key = CryptoJS.enc.Utf8.parse(fixedKey.slice(0, 32));
+        const iv = CryptoJS.enc.Utf8.parse(fixedIV.slice(0, 16));
+        
+        const decrypted = CryptoJS.AES.decrypt(encryptedText, key, {
+            iv: iv,
+            mode: CryptoJS.mode.CBC,
+            padding: CryptoJS.pad.Pkcs7
+        });
+        
+        return decrypted.toString(CryptoJS.enc.Utf8);
+    } catch (error) {
+        console.error("Decryption error:", error);
+        return "Error decrypting message. Invalid format or corrupted data.";
+    }
+}
+
+// Generate QR code from encrypted text
+function generateQRCode(text) {
+    // Clear previous QR code
+    document.getElementById('qrcode').innerHTML = '';
+    
+    try {
+        // Create and track QR code generation status
+        const qrOptions = {
+            text: text,
+            width: 256,
+            height: 256,
+            colorDark: "#000000",
+            colorLight: "#ffffff",
+            correctLevel: QRCode.CorrectLevel.H
         };
         
-        // Function to check if text will fit in QR code
-        function checkQRCapacity(text) {
-            // Calculate byte length of encrypted text (approximate)
-            // Base64 encoding increases size by roughly 33%
-            const estimatedEncryptedLength = Math.ceil(text.length * 1.33);
-            
-            // Check against QR capacity for level H
-            if (estimatedEncryptedLength > QR_CAPACITY.H) {
-                const maxChars = Math.floor(QR_CAPACITY.H / 1.33);
-                return {
-                    fits: false,
-                    maxLength: maxChars,
-                    currentLength: text.length
-                };
-            }
-            
-            return { fits: true };
-        }
+        // Generate new QR code
+        const qrCode = new QRCode(document.getElementById('qrcode'), qrOptions);
         
-        // Function to encrypt text using AES (CBC mode)
-        function encryptText(text) {
-            try {
-                // Check QR capacity first
-                const capacityCheck = checkQRCapacity(text);
-                if (!capacityCheck.fits) {
-                    return {
-                        error: true,
-                        message: `Text too long for QR code. Maximum ~${capacityCheck.maxLength} characters, you have ${capacityCheck.currentLength}.`
-                    };
-                }
-                
-                const key = CryptoJS.enc.Utf8.parse(fixedKey.slice(0, 32)); // AES-256 requires 32 bytes
-                const iv = CryptoJS.enc.Utf8.parse(fixedIV.slice(0, 16));   // IV should be 16 bytes
-                
-                const encrypted = CryptoJS.AES.encrypt(text, key, {
-                    iv: iv,
-                    mode: CryptoJS.mode.CBC,
-                    padding: CryptoJS.pad.Pkcs7
-                });
-                
-                return {
-                    error: false,
-                    text: encrypted.toString()
-                };
-            } catch (error) {
-                console.error("Encryption error:", error);
-                return {
-                    error: true,
-                    message: "Encryption failed: " + error.message
-                };
-            }
-        }
+        // Display the encrypted text (truncated if too long)
+        const displayText = text.length > 100 ? text.substring(0, 100) + '...' : text;
+        document.getElementById('encryptedText').innerHTML = 
+            `<h3>Encrypted Text:</h3>
+             <p>${displayText}</p>
+             <div class="info-text">
+                <small>Text length: ${text.length} characters</small>
+             </div>`;
         
-        // Function to decrypt text using AES (CBC mode)
-        function decryptText(encryptedText) {
-            try {
-                const key = CryptoJS.enc.Utf8.parse(fixedKey.slice(0, 32));
-                const iv = CryptoJS.enc.Utf8.parse(fixedIV.slice(0, 16));
-                
-                const decrypted = CryptoJS.AES.decrypt(encryptedText, key, {
-                    iv: iv,
-                    mode: CryptoJS.mode.CBC,
-                    padding: CryptoJS.pad.Pkcs7
-                });
-                
-                return decrypted.toString(CryptoJS.enc.Utf8);
-            } catch (error) {
-                console.error("Decryption error:", error);
-                return "Error decrypting message. Invalid format or corrupted data.";
-            }
-        }
-        
-        // Generate QR code from encrypted text
-        function generateQRCode(text) {
-            // Clear previous QR code
-            document.getElementById('qrcode').innerHTML = '';
-            
-            try {
-                // Create and track QR code generation status
-                const qrOptions = {
-                    text: text,
-                    width: 256,
-                    height: 256,
-                    colorDark: "#000000",
-                    colorLight: "#ffffff",
-                    correctLevel: QRCode.CorrectLevel.H
-                };
-                
-                // Generate new QR code
-                const qrCode = new QRCode(document.getElementById('qrcode'), qrOptions);
-                
-                // Display the encrypted text (truncated if too long)
-                const displayText = text.length > 100 ? text.substring(0, 100) + '...' : text;
-                document.getElementById('encryptedText').innerHTML = 
-                    `<h3>Encrypted Text:</h3>
-                     <p>${displayText}</p>
-                     <div class="info-text">
-                        <small>Text length: ${text.length} characters</small>
-                     </div>`;
-                
-                // Show download button
-                document.getElementById('downloadContainer').style.display = 'block';
-            } catch (error) {
-                console.error("QR generation error:", error);
-                document.getElementById('encryptedText').innerHTML = 
-                    `<div class="error">
-                        <h3>QR Generation Error:</h3>
-                        <p>Could not generate QR code. The encrypted text may be too large.</p>
-                        <p>Try shortening your message.</p>
-                    </div>`;
-            }
-        }
-        
-        // Function to download QR code as an image - Fixed for all devices
-        function downloadQRCode() {
-            // Get the QR code container
-            const qrContainer = document.getElementById('qrcode');
-            const qrCodeImg = qrContainer.querySelector('img');
-            
-            if (!qrCodeImg) {
-                alert('No QR code available to download');
-                return;
-            }
-            
-            // Show a downloading message
-            const downloadStatus = document.createElement('div');
-            downloadStatus.style.textAlign = 'center';
-            downloadStatus.style.marginTop = '10px';
-            downloadStatus.innerText = 'Preparing download...';
-            qrContainer.appendChild(downloadStatus);
-            
-            // Wait for the image to be fully loaded
-            const img = new Image();
-            img.crossOrigin = 'Anonymous';
-            
-            img.onload = function() {
-                // Create a canvas with proper dimensions
-                const canvas = document.createElement('canvas');
-                const ctx = canvas.getContext('2d');
-                
-                // Set canvas size with some padding
-                const size = Math.max(img.width, img.height) + 40; // Add padding
-                canvas.width = size;
-                canvas.height = size;
-                
-                // Fill with white background
-                ctx.fillStyle = '#FFFFFF';
-                ctx.fillRect(0, 0, canvas.width, canvas.height);
-                
-                // Draw the QR code centered on the canvas
-                const x = (size - img.width) / 2;
-                const y = (size - img.height) / 2;
-                ctx.drawImage(img, x, y);
-                
-                // Add a border
-                ctx.strokeStyle = '#55efc4';
-                ctx.lineWidth = 2;
-                ctx.strokeRect(x - 5, y - 5, img.width + 10, img.height + 10);
-                
-                // Try the mobile-friendly download approach first
-                try {
-                    canvas.toBlob(function(blob) {
-                        if (blob) {
-                            // Use the saveAs approach for better mobile compatibility
-                            saveQRBlob(blob);
-                            downloadStatus.innerText = 'Download complete!';
-                            // Remove status after a delay
-                            setTimeout(() => qrContainer.removeChild(downloadStatus), 2000);
-                        } else {
-                            throw new Error("Blob creation failed");
-                        }
-                    }, 'image/png', 1.0);
-                } catch (e) {
-                    console.error("Primary download method failed:", e);
-                    
-                    // Fallback method
-                    try {
-                        const dataURL = canvas.toDataURL('image/png', 1.0);
-                        const a = document.createElement('a');
-                        a.href = dataURL;
-                        a.download = 'secure-qr-code.png';
-                        document.body.appendChild(a);
-                        a.click();
-                        document.body.removeChild(a);
-                        
-                        downloadStatus.innerText = 'Download complete!';
-                        setTimeout(() => qrContainer.removeChild(downloadStatus), 2000);
-                    } catch (err) {
-                        downloadStatus.innerText = 'Download failed. Try taking a screenshot instead.';
-                        setTimeout(() => qrContainer.removeChild(downloadStatus), 3000);
-                        console.error("All download methods failed:", err);
-                    }
-                }
-            };
-            
-            img.onerror = function() {
-                downloadStatus.innerText = 'Error loading QR image for download';
-                setTimeout(() => qrContainer.removeChild(downloadStatus), 3000);
-            };
-            
-            // Set source to trigger loading
-            img.src = qrCodeImg.src;
-            
-            // Helper function to save blob (better mobile support)
-            function saveQRBlob(blob) {
-                // Create object URL
-                const url = URL.createObjectURL(blob);
-                
-                // Try the standard download approach
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = 'secure-qr-code.png';
-                a.style.display = 'none';
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-                
-                // Clean up the URL object
-                setTimeout(() => URL.revokeObjectURL(url), 1000);
-            }
-        }
-        
-        // Initialize QR code scanner
-        function initializeScanner() {
-            html5QrCode = new Html5Qrcode("qr-reader");
-            
-            document.getElementById('startScanButton').addEventListener('click', () => {
-                document.getElementById('startScanButton').style.display = 'none';
-                document.getElementById('stopScanButton').style.display = 'inline-block';
-                document.getElementById('scanResult').innerHTML = '';
-                document.getElementById('decryptedMessage').innerHTML = '';
-                
-                const qrCodeSuccessCallback = (decodedText) => {
-                    html5QrCode.stop().then(() => {
-                        document.getElementById('startScanButton').style.display = 'inline-block';
-                        document.getElementById('stopScanButton').style.display = 'none';
-                        
-                        document.getElementById('scanResult').innerHTML = 
-                            `<p>QR Code detected!</p>`;
-                        
-                        // Decrypt the scanned text
-                        const decryptedMessage = decryptText(decodedText);
-                        document.getElementById('decryptedMessage').innerHTML = 
-                            `<h3>Decrypted Message:</h3>
-                             <p>${decryptedMessage}</p>`;
-                    }).catch(err => {
-                        console.error("Error stopping scanner:", err);
-                    });
-                };
-                
-                const config = { fps: 10, qrbox: { width: 250, height: 250 } };
-                
-                html5QrCode.start(
-                    { facingMode: "environment" }, 
-                    config, 
-                    qrCodeSuccessCallback,
-                    (errorMessage) => {
-                        // This callback will be called regularly even when no QR is detected
-                        // So we're only showing errors when starting the scanner fails
-                    }
-                ).catch((err) => {
-                    document.getElementById('scanResult').innerHTML = 
-                        `<p class="error">Error starting scanner: ${err}</p>`;
-                    document.getElementById('startScanButton').style.display = 'inline-block';
-                    document.getElementById('stopScanButton').style.display = 'none';
-                });
-            });
-            
-            document.getElementById('stopScanButton').addEventListener('click', () => {
-                if (html5QrCode) {
-                    html5QrCode.stop().then(() => {
-                        document.getElementById('startScanButton').style.display = 'inline-block';
-                        document.getElementById('stopScanButton').style.display = 'none';
-                    }).catch(err => {
-                        console.error("Error stopping scanner:", err);
-                    });
-                }
-            });
-        }
-        
-        // Initialize encryption and QR code generation
-        document.getElementById('encryptButton').addEventListener('click', () => {
-            const message = document.getElementById('message').value.trim();
-            
-            if (!message) {
-                alert("Please enter a message to encrypt");
-                return;
-            }
-            
-            // Clear previous results
-            document.getElementById('encryptedText').innerHTML = '';
-            document.getElementById('qrcode').innerHTML = '';
-            document.getElementById('downloadContainer').style.display = 'none';
-            
-            // Show status while processing
-            const statusElement = document.createElement('div');
-            statusElement.textContent = 'Processing...';
-            document.getElementById('encryptedText').appendChild(statusElement);
-            
-            // Use setTimeout to ensure UI updates
-            setTimeout(() => {
-                const result = encryptText(message);
-                
-                if (!result.error) {
-                    generateQRCode(result.text);
-                    statusElement.remove();
-                } else {
-                    document.getElementById('encryptedText').innerHTML = 
-                        `<div class="error">
-                            <h3>Error:</h3>
-                            <p>${result.message}</p>
-                        </div>`;
-                }
-            }, 10);
-        });
-        
-        // Initialize manual decryption from text input
-        document.getElementById('decryptButton').addEventListener('click', () => {
-            const encryptedText = document.getElementById('encryptedInput').value.trim();
-            
-            if (!encryptedText) {
-                alert("Please enter encrypted text to decrypt");
-                return;
-            }
-            
-            const decryptedMessage = decryptText(encryptedText);
-            document.getElementById('scanResult').innerHTML = 
-                `<p>Decryption from text input:</p>`;
-            document.getElementById('decryptedMessage').innerHTML = 
-                `<h3>Decrypted Message:</h3>
-                 <p>${decryptedMessage}</p>`;
-        });
-        
-        // Process uploaded QR code image
-        function processQRFromImage(file) {
-            const reader = new FileReader();
-            
-            reader.onload = function(e) {
-                const img = new Image();
-                img.src = e.target.result;
-                
-                img.onload = function() {
-                    // Create a canvas element
-                    const canvas = document.createElement('canvas');
-                    const context = canvas.getContext('2d');
-                    canvas.width = img.width;
-                    canvas.height = img.height;
-                    
-                    // Draw the image on the canvas
-                    context.drawImage(img, 0, 0, img.width, img.height);
-                    
-                    // Use Html5Qrcode to decode the image
-                    const config = { width: img.width, height: img.height };
-                    const qrCodeReader = new Html5Qrcode("qr-reader", { formatsToSupport: [ Html5QrcodeSupportedFormats.QR_CODE ] });
-                    
-                    qrCodeReader.scanFile(file, /* showImage= */ false)
-                        .then(decodedText => {
-                            // Success, use the decoded text
-                            document.getElementById('scanResult').innerHTML = 
-                                `<p>QR Code detected from image!</p>`;
-                            
-                            // Decrypt the scanned text
-                            const decryptedMessage = decryptText(decodedText);
-                            document.getElementById('decryptedMessage').innerHTML = 
-                                `<h3>Decrypted Message:</h3>
-                                 <p>${decryptedMessage}</p>`;
-                        })
-                        .catch(err => {
-                            // Failure, handle the error
-                            document.getElementById('scanResult').innerHTML = 
-                                `<p class="error">Error reading QR code from image: No valid QR code found</p>`;
-                        })
-                        .finally(() => {
-                            // Clean up resources if needed
-                            qrCodeReader.clear();
-                        });
-                };
-            };
-            
-            reader.readAsDataURL(file);
-        }
+        // Show download button
+        document.getElementById('downloadContainer').style.display = 'block';
+    } catch (error) {
+        console.error("QR generation error:", error);
+        document.getElementById('encryptedText').innerHTML = 
+            `<div class="error">
+                <h3>QR Generation Error:</h3>
+                <p>Could not generate QR code. The encrypted text may be too large.</p>
+                <p>Try shortening your message.</p>
+            </div>`;
+    }
+}
 
-        // File input change handler
-        document.getElementById('qrFileInput').addEventListener('change', (event) => {
-            const file = event.target.files[0];
-            if (file) {
-                document.getElementById('scanResult').innerHTML = 'Processing image...';
-                document.getElementById('decryptedMessage').innerHTML = '';
-                processQRFromImage(file);
+// Function to download QR code as an image - Fixed version
+function downloadQRCode() {
+    const qrContainer = document.getElementById('qrcode');
+    const qrCodeCanvas = qrContainer.querySelector('canvas');
+    
+    if (!qrCodeCanvas) {
+        alert('No QR code available to download');
+        return;
+    }
+    
+    // Show a downloading message
+    const downloadStatus = document.createElement('div');
+    downloadStatus.style.textAlign = 'center';
+    downloadStatus.style.marginTop = '10px';
+    downloadStatus.innerText = 'Preparing download...';
+    qrContainer.appendChild(downloadStatus);
+    
+    try {
+        // Create a temporary link and trigger download
+        const link = document.createElement('a');
+        link.download = 'secure-qr-code.png';
+        link.href = qrCodeCanvas.toDataURL('image/png');
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        
+        downloadStatus.innerText = 'Download complete!';
+        setTimeout(() => qrContainer.removeChild(downloadStatus), 2000);
+    } catch (error) {
+        console.error("Download error:", error);
+        downloadStatus.innerText = 'Download failed. Try taking a screenshot instead.';
+        setTimeout(() => qrContainer.removeChild(downloadStatus), 3000);
+    }
+}
+
+// Initialize QR code scanner
+function initializeScanner() {
+    html5QrCode = new Html5Qrcode("qr-reader");
+    
+    document.getElementById('startScanButton').addEventListener('click', () => {
+        document.getElementById('startScanButton').style.display = 'none';
+        document.getElementById('stopScanButton').style.display = 'inline-block';
+        document.getElementById('scanResult').innerHTML = '';
+        document.getElementById('decryptedMessage').innerHTML = '';
+        
+        const qrCodeSuccessCallback = (decodedText) => {
+            html5QrCode.stop().then(() => {
+                document.getElementById('startScanButton').style.display = 'inline-block';
+                document.getElementById('stopScanButton').style.display = 'none';
+                
+                document.getElementById('scanResult').innerHTML = 
+                    `<p>QR Code detected!</p>`;
+                
+                // Decrypt the scanned text
+                const decryptedMessage = decryptText(decodedText);
+                document.getElementById('decryptedMessage').innerHTML = 
+                    `<h3>Decrypted Message:</h3>
+                     <p>${decryptedMessage}</p>`;
+            }).catch(err => {
+                console.error("Error stopping scanner:", err);
+            });
+        };
+        
+        const config = { fps: 10, qrbox: { width: 250, height: 250 } };
+        
+        html5QrCode.start(
+            { facingMode: "environment" }, 
+            config, 
+            qrCodeSuccessCallback,
+            (errorMessage) => {
+                // This callback will be called regularly even when no QR is detected
+                // So we're only showing errors when starting the scanner fails
             }
+        ).catch((err) => {
+            document.getElementById('scanResult').innerHTML = 
+                `<p class="error">Error starting scanner: ${err}</p>`;
+            document.getElementById('startScanButton').style.display = 'inline-block';
+            document.getElementById('stopScanButton').style.display = 'none';
         });
-        
-        // Initialize the download button
-        document.getElementById('downloadQrButton').addEventListener('click', downloadQRCode);
-        
-        // Track character count with visual feedback
-        function updateCharacterCount() {
-            const message = document.getElementById('message');
-            const charCount = document.getElementById('characterCount');
-            const length = message.value.length;
-            const max = 900; // Maximum safe length
-            
-            charCount.textContent = `${length}/${max}`;
-            
-            // Visual feedback based on length
-            charCount.className = 'character-count';
-            if (length > max * 0.8) {
-                charCount.classList.add('warning');
-            }
-            if (length > max * 0.95) {
-                charCount.classList.remove('warning');
-                charCount.classList.add('danger');
-            }
+    });
+    
+    document.getElementById('stopScanButton').addEventListener('click', () => {
+        if (html5QrCode) {
+            html5QrCode.stop().then(() => {
+                document.getElementById('startScanButton').style.display = 'inline-block';
+                document.getElementById('stopScanButton').style.display = 'none';
+            }).catch(err => {
+                console.error("Error stopping scanner:", err);
+            });
         }
+    });
+}
+
+// Initialize encryption and QR code generation
+document.getElementById('encryptButton').addEventListener('click', () => {
+    const message = document.getElementById('message').value.trim();
+    
+    if (!message) {
+        alert("Please enter a message to encrypt");
+        return;
+    }
+    
+    // Clear previous results
+    document.getElementById('encryptedText').innerHTML = '';
+    document.getElementById('qrcode').innerHTML = '';
+    document.getElementById('downloadContainer').style.display = 'none';
+    
+    // Show status while processing
+    const statusElement = document.createElement('div');
+    statusElement.textContent = 'Processing...';
+    document.getElementById('encryptedText').appendChild(statusElement);
+    
+    // Use setTimeout to ensure UI updates
+    setTimeout(() => {
+        const result = encryptText(message);
         
-        // Initialize the app when the DOM is fully loaded
-        document.addEventListener('DOMContentLoaded', () => {
-            createAnimatedBackground();
-            initializeScanner();
+        if (!result.error) {
+            generateQRCode(result.text);
+            statusElement.remove();
+        } else {
+            document.getElementById('encryptedText').innerHTML = 
+                `<div class="error">
+                    <h3>Error:</h3>
+                    <p>${result.message}</p>
+                </div>`;
+        }
+    }, 10);
+});
+
+// Initialize manual decryption from text input
+document.getElementById('decryptButton').addEventListener('click', () => {
+    const encryptedText = document.getElementById('encryptedInput').value.trim();
+    
+    if (!encryptedText) {
+        alert("Please enter encrypted text to decrypt");
+        return;
+    }
+    
+    const decryptedMessage = decryptText(encryptedText);
+    document.getElementById('scanResult').innerHTML = 
+        `<p>Decryption from text input:</p>`;
+    document.getElementById('decryptedMessage').innerHTML = 
+        `<h3>Decrypted Message:</h3>
+         <p>${decryptedMessage}</p>`;
+});
+
+// Process uploaded QR code image
+function processQRFromImage(file) {
+    const reader = new FileReader();
+    
+    reader.onload = function(e) {
+        const img = new Image();
+        img.src = e.target.result;
+        
+        img.onload = function() {
+            // Create a canvas element
+            const canvas = document.createElement('canvas');
+            const context = canvas.getContext('2d');
+            canvas.width = img.width;
+            canvas.height = img.height;
             
-            // Set up character counter
-            const messageInput = document.getElementById('message');
-            messageInput.addEventListener('input', updateCharacterCount);
-            updateCharacterCount();
-        });
+            // Draw the image on the canvas
+            context.drawImage(img, 0, 0, img.width, img.height);
+            
+            // Use Html5Qrcode to decode the image
+            const config = { width: img.width, height: img.height };
+            const qrCodeReader = new Html5Qrcode("qr-reader", { formatsToSupport: [ Html5QrcodeSupportedFormats.QR_CODE ] });
+            
+            qrCodeReader.scanFile(file, /* showImage= */ false)
+                .then(decodedText => {
+                    // Success, use the decoded text
+                    document.getElementById('scanResult').innerHTML = 
+                        `<p>QR Code detected from image!</p>`;
+                    
+                    // Decrypt the scanned text
+                    const decryptedMessage = decryptText(decodedText);
+                    document.getElementById('decryptedMessage').innerHTML = 
+                        `<h3>Decrypted Message:</h3>
+                         <p>${decryptedMessage}</p>`;
+                })
+                .catch(err => {
+                    // Failure, handle the error
+                    document.getElementById('scanResult').innerHTML = 
+                        `<p class="error">Error reading QR code from image: No valid QR code found</p>`;
+                })
+                .finally(() => {
+                    // Clean up resources if needed
+                    qrCodeReader.clear();
+                });
+        };
+    };
+    
+    reader.readAsDataURL(file);
+}
+
+// File input change handler
+document.getElementById('qrFileInput').addEventListener('change', (event) => {
+    const file = event.target.files[0];
+    if (file) {
+        document.getElementById('scanResult').innerHTML = 'Processing image...';
+        document.getElementById('decryptedMessage').innerHTML = '';
+        processQRFromImage(file);
+    }
+});
+
+// Initialize the download button
+document.getElementById('downloadQrButton').addEventListener('click', downloadQRCode);
+
+// Track character count with visual feedback
+function updateCharacterCount() {
+    const message = document.getElementById('message');
+    const charCount = document.getElementById('characterCount');
+    const length = message.value.length;
+    const max = 500; // Reduced from 900 to a more ideal size
+    
+    charCount.textContent = `${length}/${max}`;
+    
+    // Visual feedback based on length
+    charCount.className = 'character-count';
+    if (length > max * 0.8) {
+        charCount.classList.add('warning');
+    }
+    if (length > max * 0.95) {
+        charCount.classList.remove('warning');
+        charCount.classList.add('danger');
+    }
+    
+    // Disable encrypt button if over limit
+    document.getElementById('encryptButton').disabled = length > max;
+}
+
+// Initialize the app when the DOM is fully loaded
+document.addEventListener('DOMContentLoaded', () => {
+    createAnimatedBackground();
+    initializeScanner();
+    
+    // Set up character counter
+    const messageInput = document.getElementById('message');
+    messageInput.addEventListener('input', updateCharacterCount);
+    updateCharacterCount();
+    
+    // Set maxlength attribute to prevent typing beyond limit
+    messageInput.setAttribute('maxlength', '500');
+});
     </script>
 </body>
 </html>
