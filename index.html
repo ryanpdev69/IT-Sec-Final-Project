@@ -173,15 +173,28 @@
             border-radius: 8px;
             overflow: hidden;
         }
-        
-        #decryptedMessage, #encryptedText {
-            margin-top: 15px;
-            padding: 15px;
-            background-color: rgba(85, 239, 196, 0.1);
-            border-left: 4px solid var(--seafoam);
-            border-radius: 4px;
-            word-break: break-all;
-        }
+        #encryptedText {
+    margin-top: 15px;
+    padding: 15px;
+    background-color: rgba(85, 239, 196, 0.1);
+    border-left: 4px solid var(--seafoam);
+    border-radius: 4px;
+    word-break: break-all;
+    max-height: 200px; /* Set a fixed height */
+    overflow-y: auto; /* Enable vertical scrolling */
+    white-space: pre-wrap; /* Preserve line breaks */
+}
+       #decryptedMessage {
+    margin-top: 15px;
+    padding: 15px;
+    background-color: rgba(85, 239, 196, 0.1);
+    border-left: 4px solid var(--seafoam);
+    border-radius: 4px;
+    word-break: break-all;
+    max-height: 200px; /* Set a fixed height */
+    overflow-y: auto; /* Enable vertical scrolling */
+    white-space: pre-wrap; /* Preserve line breaks */
+}
         
         .error {
             color: #ff7675;
